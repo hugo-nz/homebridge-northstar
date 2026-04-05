@@ -1,8 +1,8 @@
 {
-  "pluginAlias": "Polestar",
+  "pluginAlias": "Northstar",
   "pluginType": "platform",
   "singular": false,
-  "headerDisplay": "Polestar homebridge plugin. Exposes your Polestar vehicle(s) as HomeKit accessories with battery level, charging state, and charging outlet services.",
+  "headerDisplay": "Northstar: Polestar connector for Homebridge. Exposes your Polestar vehicle(s) as HomeKit accessories with battery level, charging state, and charging outlet services.",
   "footerDisplay": "This plugin is not affiliated with or endorsed by Polestar.",
   "schema": {
     "type": "object",
@@ -10,7 +10,7 @@
       "name": {
         "title": "Platform Name",
         "type": "string",
-        "default": "Polestar",
+        "default": "Northstar",
         "description": "Name shown in Homebridge logs."
       },
       "email": {

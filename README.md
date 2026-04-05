@@ -1,4 +1,6 @@
-# homebridge-polestar
+# homebridge-northstar
+
+**Northstar: Polestar connector for Homebridge**
 
 A [Homebridge](https://homebridge.io) plugin that connects to the Polestar API to expose your Polestar vehicle as a HomeKit accessory.
 
@@ -17,10 +19,10 @@ Each vehicle in your Polestar account is added as a HomeKit accessory with the f
 ## Installation
 
 ```bash
-npm install -g homebridge-polestar
+npm install -g homebridge-northstar
 ```
 
-Or install via the [Homebridge UI](https://github.com/homebridge/homebridge-config-ui-x) by searching for `homebridge-polestar`.
+Or install via the [Homebridge UI](https://github.com/homebridge/homebridge-config-ui-x) by searching for `homebridge-northstar`.
 
 ## Configuration
 
@@ -28,8 +30,8 @@ Add the following to the `platforms` array in your Homebridge `config.json`:
 
 ```json
 {
-  "platform": "Polestar",
-  "name": "Polestar",
+  "platform": "Northstar",
+  "name": "Northstar",
   "email": "your@email.com",
   "password": "your-polestar-password",
   "refreshInterval": 60

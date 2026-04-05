@@ -1,5 +1,5 @@
-export const PLUGIN_NAME = 'homebridge-polestar';
-export const PLATFORM_NAME = 'Polestar';
+export const PLUGIN_NAME = 'homebridge-northstar';
+export const PLATFORM_NAME = 'Northstar';
 
 // Polestar OIDC / OAuth2 constants (from pypolestar)
 export const OIDC_PROVIDER_BASE_URL = 'https://polestarid.eu.polestar.com';

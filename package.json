@@ -1,7 +1,7 @@
 {
-  "name": "homebridge-polestar",
+  "name": "homebridge-northstar",
   "version": "1.0.0",
-  "description": "Homebridge plugin for Polestar electric vehicles",
+  "description": "Northstar: Polestar connector for Homebridge",
   "license": "ISC",
   "homepage": "https://github.com/hugo-nz/homebridge-polestar",
   "repository": {

@@ -66,7 +66,7 @@ export class PolestarPlatform implements DynamicPlatformPlugin {
   private async discoverDevices(): Promise<void> {
     if (!this.config.email || !this.config.password) {
       this.log.error(
-        'homebridge-polestar: "email" and "password" are required in the plugin config',
+        'homebridge-northstar: "email" and "password" are required in the plugin config',
       );
       return;
     }

@@ -7,16 +7,18 @@ import {
 } from 'homebridge';
 import { PolestarPlatform } from './platform';
 import { PolestarApi } from './api/api';
-import { ChargingStatus } from './api/models';
+import { ActionCommand, ChargingStatus } from './api/models';
 import { DEFAULT_REFRESH_INTERVAL_SECONDS, LOW_BATTERY_THRESHOLD } from './settings';
 
 /**
  * A single Polestar vehicle exposed as a HomeKit accessory.
  *
  * Services:
- *   - AccessoryInformation  (manufacturer, model, serial/VIN)
+ *   - AccessoryInformation  (manufacturer, model, serial/VIN, odometer in HardwareRevision)
  *   - Battery               (level, charging state, low-battery alert)
  *   - Outlet                (On = actively charging, OutletInUse = charger connected)
+ *   - Switch "Climate"      (On = climate running; toggle starts/stops climate)
+ *   - LockMechanism "Doors" (LockCurrentState / LockTargetState)
  */
 export class PolestarAccessory {
   private readonly log: Logger;
@@ -24,7 +26,17 @@ export class PolestarAccessory {
 
   private readonly infoService: Service;
   private readonly batteryService: Service;
+  /** Outlet service – represents the active charging connection. */
   private readonly outletService: Service;
+  /** Switch service – starts/stops climate pre-conditioning. */
+  private readonly climateService: Service;
+  /** LockMechanism service – locks/unlocks the doors. */
+  private readonly lockService: Service;
+
+  /** Optimistic climate state — updated on toggle and cleared on next data refresh. */
+  private climateActive = false;
+  /** Optimistic lock target state. */
+  private lockTargetSecured = true;
 
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -89,6 +101,34 @@ export class PolestarAccessory {
       .onGet(this.getIsCharging.bind(this));
 
     // ------------------------------------------------------------------
+    // Climate switch — toggle to start / stop climate pre-conditioning
+    // ------------------------------------------------------------------
+    this.climateService =
+      this.accessory.getService('Climate') ||
+      this.accessory.addService(Svc.Switch, 'Climate', `${vin}-climate`);
+
+    this.climateService
+      .getCharacteristic(C.On)
+      .onGet(this.getClimateActive.bind(this))
+      .onSet(this.setClimateActive.bind(this));
+
+    // ------------------------------------------------------------------
+    // Lock mechanism — lock / unlock doors
+    // ------------------------------------------------------------------
+    this.lockService =
+      this.accessory.getService('Doors') ||
+      this.accessory.addService(Svc.LockMechanism, 'Doors', `${vin}-lock`);
+
+    this.lockService
+      .getCharacteristic(C.LockCurrentState)
+      .onGet(this.getLockCurrentState.bind(this));
+
+    this.lockService
+      .getCharacteristic(C.LockTargetState)
+      .onGet(this.getLockTargetState.bind(this))
+      .onSet(this.setLockTargetState.bind(this));
+
+    // ------------------------------------------------------------------
     // Periodic refresh
     // ------------------------------------------------------------------
     this.scheduleRefresh(refreshInterval);
@@ -127,6 +167,70 @@ export class PolestarAccessory {
   private getIsCharging(): CharacteristicValue {
     const data = this.api.getCarBattery(this.vin);
     return this.isActivelyCharging(data?.chargingStatus);
+  }
+
+  // --------------------------------------------------------------------------
+  // Climate switch handlers
+  // --------------------------------------------------------------------------
+
+  private getClimateActive(): CharacteristicValue {
+    return this.climateActive;
+  }
+
+  private async setClimateActive(value: CharacteristicValue): Promise<void> {
+    const on = value as boolean;
+    const command = on ? ActionCommand.CLIMATE_START : ActionCommand.CLIMATE_STOP;
+    this.log.info('VIN %s — climate %s requested', this.vin, on ? 'START' : 'STOP');
+    try {
+      await this.api.performAction(this.vin, command);
+      this.climateActive = on;
+    } catch (err) {
+      this.log.error('VIN %s — climate action failed: %s', this.vin, String(err));
+      // Revert the optimistic state so HomeKit shows the real state.
+      this.climateService.updateCharacteristic(this.C.On, this.climateActive);
+      throw err;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Lock mechanism handlers
+  // --------------------------------------------------------------------------
+
+  private getLockCurrentState(): CharacteristicValue {
+    const { C } = this;
+    return this.lockTargetSecured
+      ? C.LockCurrentState.SECURED
+      : C.LockCurrentState.UNSECURED;
+  }
+
+  private getLockTargetState(): CharacteristicValue {
+    const { C } = this;
+    return this.lockTargetSecured
+      ? C.LockTargetState.SECURED
+      : C.LockTargetState.UNSECURED;
+  }
+
+  private async setLockTargetState(value: CharacteristicValue): Promise<void> {
+    const { C } = this;
+    const secured = value === C.LockTargetState.SECURED;
+    const command = secured ? ActionCommand.LOCK : ActionCommand.UNLOCK;
+    this.log.info('VIN %s — door %s requested', this.vin, secured ? 'LOCK' : 'UNLOCK');
+    try {
+      await this.api.performAction(this.vin, command);
+      this.lockTargetSecured = secured;
+      this.lockService.updateCharacteristic(
+        C.LockCurrentState,
+        secured ? C.LockCurrentState.SECURED : C.LockCurrentState.UNSECURED,
+      );
+    } catch (err) {
+      this.log.error('VIN %s — lock action failed: %s', this.vin, String(err));
+      // Revert target state to match current.
+      this.lockService.updateCharacteristic(
+        C.LockTargetState,
+        this.lockTargetSecured ? C.LockTargetState.SECURED : C.LockTargetState.UNSECURED,
+      );
+      throw err;
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -190,6 +294,25 @@ export class PolestarAccessory {
         this.vin,
         level,
         battery.chargingStatus,
+      );
+    }
+
+    // Odometer — stored in HardwareRevision as "XXXXX km".
+    const odometer = this.api.getCarOdometer(this.vin);
+    if (odometer?.odometerMeters != null) {
+      const km = Math.round(odometer.odometerMeters / 1000);
+      this.infoService.updateCharacteristic(C.HardwareRevision, `${km} km`);
+      this.log.debug('VIN %s — odometer: %d km', this.vin, km);
+    }
+
+    // Location — best-effort, logged only.
+    const location = this.api.getCarLocation(this.vin);
+    if (location && location.latitude !== null && location.longitude !== null) {
+      this.log.debug(
+        'VIN %s — location: %.6f, %.6f',
+        this.vin,
+        location.latitude,
+        location.longitude,
       );
     }
   }

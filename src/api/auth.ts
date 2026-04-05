@@ -191,6 +191,8 @@ export class PolestarAuth {
     if (!this.codeVerifier) {
       this.codeVerifier = PolestarAuth.generateCodeVerifier();
     }
+    // PKCE code challenge per RFC 7636: BASE64URL(SHA-256(code_verifier)).
+    // codeVerifier is a randomly-generated nonce — this is NOT a password hash.
     return PolestarAuth.b64UrlEncode(
       crypto.createHash('sha256').update(this.codeVerifier).digest(),
     );

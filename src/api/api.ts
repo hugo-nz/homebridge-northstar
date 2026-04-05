@@ -11,10 +11,14 @@ import {
   CarInformationData,
   CarOdometerData,
   CarTelematicsData,
+  CarLocationData,
+  ActionCommand,
+  ActionResult,
   findByVin,
   parseBatteryData,
   parseCarInformation,
   parseHealthData,
+  parseLocationData,
   parseOdometerData,
 } from './models';
 import { API_URL, REQUEST_TIMEOUT_MS } from '../settings';
@@ -67,6 +71,24 @@ const QUERY_TELEMATICS_V2 = `
   }
 `;
 
+const QUERY_GET_CAR_LOCATION = `
+  query GetCarLocationV2($vin: String!) {
+    getCarLocationV2(vin: $vin) {
+      latitude
+      longitude
+      timestamp { seconds nanos }
+    }
+  }
+`;
+
+const MUTATION_PERFORM_ACTION = `
+  mutation PerformActionV2($vin: String!, $command: String!) {
+    performActionV2(vin: $vin, command: $command) {
+      isSuccessful
+    }
+  }
+`;
+
 // ---------------------------------------------------------------------------
 // Exceptions
 // ---------------------------------------------------------------------------
@@ -99,6 +121,7 @@ export class PolestarApi {
   private readonly client: AxiosInstance;
   private carInfoByVin: Map<string, CarInformationData> = new Map();
   private telematicsByVin: Map<string, CarTelematicsData> = new Map();
+  private locationByVin: Map<string, CarLocationData> = new Map();
   private readonly configuredVins: Set<string> | null;
 
   constructor(
@@ -167,6 +190,10 @@ export class PolestarApi {
     return this.telematicsByVin.get(vin.toUpperCase())?.health ?? null;
   }
 
+  getCarLocation(vin: string): CarLocationData | null {
+    return this.locationByVin.get(vin.toUpperCase()) ?? null;
+  }
+
   // -------------------------------------------------------------------------
   // Update
   // -------------------------------------------------------------------------
@@ -181,6 +208,33 @@ export class PolestarApi {
     } catch (err) {
       this.latestCallCode = 500;
       this.log.error('Failed to update telematics for VIN %s: %s', upperVin, String(err));
+      throw err;
+    }
+
+    try {
+      await this.updateLocationData(upperVin);
+    } catch (err) {
+      // Location data is best-effort — some accounts may not have access.
+      this.log.debug('Location update unavailable for VIN %s: %s', upperVin, String(err));
+    }
+  }
+
+  /** Send a command to the car (climate start/stop, lock, unlock). */
+  async performAction(vin: string, command: ActionCommand): Promise<ActionResult> {
+    await this.auth.getToken();
+
+    const upperVin = vin.toUpperCase();
+
+    try {
+      const result = await this.queryGraphQL<{ performActionV2: { isSuccessful: boolean } }>(
+        MUTATION_PERFORM_ACTION,
+        { vin: upperVin, command },
+      );
+      const isSuccessful = result.performActionV2?.isSuccessful ?? false;
+      this.log.debug('performActionV2 %s for VIN %s → %s', command, upperVin, isSuccessful);
+      return { isSuccessful };
+    } catch (err) {
+      this.log.error('Action %s failed for VIN %s: %s', command, upperVin, String(err));
       throw err;
     }
   }
@@ -228,6 +282,20 @@ export class PolestarApi {
     });
 
     this.log.debug('Telematics updated for VIN %s', vin);
+  }
+
+  private async updateLocationData(vin: string): Promise<void> {
+    type LocationResult = {
+      getCarLocationV2: Record<string, unknown>;
+    };
+
+    const result = await this.queryGraphQL<LocationResult>(QUERY_GET_CAR_LOCATION, { vin });
+
+    const raw = result.getCarLocationV2;
+    if (raw) {
+      this.locationByVin.set(vin, parseLocationData(raw));
+      this.log.debug('Location updated for VIN %s', vin);
+    }
   }
 
   private async queryGraphQL<T>(

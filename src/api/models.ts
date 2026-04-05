@@ -61,6 +61,25 @@ export interface CarTelematicsData {
   health: CarHealthData | null;
 }
 
+export interface CarLocationData {
+  latitude: number | null;
+  longitude: number | null;
+  eventUpdatedTimestamp: Date | null;
+}
+
+/** Result returned by the performActionV2 mutation. */
+export interface ActionResult {
+  isSuccessful: boolean;
+}
+
+/** Commands supported by the performActionV2 mutation. */
+export enum ActionCommand {
+  CLIMATE_START = 'CLIMATE_START',
+  CLIMATE_STOP = 'CLIMATE_STOP',
+  LOCK = 'LOCK',
+  UNLOCK = 'UNLOCK',
+}
+
 // ----- Helper types --------------------------------------------------------
 
 type GqlRecord = Record<string, unknown>;
@@ -160,4 +179,18 @@ export function parseHealthData(data: GqlRecord): CarHealthData {
 /** Find the first record in a list whose vin matches (or any if vin is null). */
 export function findByVin(items: GqlRecord[], vin: string): GqlRecord | null {
   return items.find((item) => item['vin'] === vin) ?? null;
+}
+
+export function parseLocationData(data: GqlRecord): CarLocationData {
+  return {
+    latitude:
+      data['latitude'] !== undefined && data['latitude'] !== null
+        ? Number(data['latitude'])
+        : null,
+    longitude:
+      data['longitude'] !== undefined && data['longitude'] !== null
+        ? Number(data['longitude'])
+        : null,
+    eventUpdatedTimestamp: getTimestampField(data),
+  };
 }

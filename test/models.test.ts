@@ -4,7 +4,9 @@ import {
   parseBatteryData,
   parseOdometerData,
   parseHealthData,
+  parseLocationData,
   findByVin,
+  ActionCommand,
 } from '../src/api/models';
 
 // ---------------------------------------------------------------------------
@@ -179,5 +181,46 @@ describe('findByVin', () => {
 
   it('returns null for an empty list', () => {
     expect(findByVin([], 'VIN001')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseLocationData
+// ---------------------------------------------------------------------------
+
+describe('parseLocationData', () => {
+  it('parses latitude, longitude and timestamp', () => {
+    const raw = {
+      latitude: 59.334591,
+      longitude: 18.063240,
+      timestamp: { seconds: 1700000000, nanos: 0 },
+    };
+
+    const result = parseLocationData(raw);
+
+    expect(result.latitude).toBeCloseTo(59.334591, 5);
+    expect(result.longitude).toBeCloseTo(18.06324, 5);
+    expect(result.eventUpdatedTimestamp).toEqual(new Date(1700000000 * 1000));
+  });
+
+  it('handles null/missing coordinate fields gracefully', () => {
+    const raw = { latitude: null, longitude: null };
+    const result = parseLocationData(raw);
+    expect(result.latitude).toBeNull();
+    expect(result.longitude).toBeNull();
+    expect(result.eventUpdatedTimestamp).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ActionCommand enum
+// ---------------------------------------------------------------------------
+
+describe('ActionCommand', () => {
+  it('has the expected string values', () => {
+    expect(ActionCommand.CLIMATE_START).toBe('CLIMATE_START');
+    expect(ActionCommand.CLIMATE_STOP).toBe('CLIMATE_STOP');
+    expect(ActionCommand.LOCK).toBe('LOCK');
+    expect(ActionCommand.UNLOCK).toBe('UNLOCK');
   });
 });
